@@ -1,3 +1,14 @@
+"""
+Week 1, Day 3 (3.1.1) - the actual tool functions.
+
+Plain Python. The model never sees this file - it only sees the
+descriptions in schemas.py. Keep the function names in sync between the
+two, and with TOOL_REGISTRY in agent.py.
+
+These raise normally on failure. Turning exceptions into text is
+run_tool()'s job in agent.py, not theirs.
+"""
+
 LANDMARK_CITIES = {
     "taj mahal": "Agra",
     "charminar": "Hyderabad",
@@ -5,13 +16,15 @@ LANDMARK_CITIES = {
     "vaultspire tower": "Kochi",
 }
 
+
 def find_landmark_city(landmark: str) -> str:
     key = landmark.strip().lower()
     if key not in LANDMARK_CITIES:
         raise ValueError(
-            f"Unknown landmark '{landmark}'. Known landmarks: {list(LANDMARK_CITIES)}"
+            f"Unknown landmark '{landmark}'. Known landmarks: {sorted(LANDMARK_CITIES)}"
         )
     return LANDMARK_CITIES[key]
+
 
 WEATHER_DATA = {
     "delhi": "32°C, hazy sunshine",
@@ -21,6 +34,7 @@ WEATHER_DATA = {
     "mumbai": "31°C, humid",
 }
 
+
 def get_weather(city: str) -> str:
     key = city.strip().lower()
     if key not in WEATHER_DATA:
@@ -29,11 +43,22 @@ def get_weather(city: str) -> str:
         )
     return f"{city}: {WEATHER_DATA[key]}"
 
+
 def calculator(expression: str) -> str:
-    """Evaluate a maths expression. eval() is unsafe — see drill 2.4.5."""
+    """Evaluate a maths expression. eval() is unsafe - see drill 2.4.5."""
     return str(eval(expression))
 
-# if __name__ == "__main__":
-#     print(get_weather("Delhi"))
-#     print(get_weather("Paris"))     # should give the "no data" message
-#     print(calculator("17 * 43"))    # 731
+
+if __name__ == "__main__":
+    # Run this file directly to check the tools work before the agent uses them.
+    print(find_landmark_city("Taj Mahal"))      # Agra
+    print(get_weather("Delhi"))
+    print(calculator("17 * 43"))                # 731
+
+    # Unknown inputs raise. That is correct - tools fail like ordinary
+    # Python, and run_tool() in agent.py decides what to do about it.
+    for bad in (lambda: get_weather("Paris"), lambda: find_landmark_city("Eiffel Tower")):
+        try:
+            bad()
+        except ValueError as e:
+            print(f"raised as expected: {e}")

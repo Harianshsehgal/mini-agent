@@ -14,7 +14,7 @@ import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv()
 
@@ -27,8 +27,13 @@ MODEL = "openai/gpt-oss-20b"
 
 
 # ---------------------------------------------------------------- schema
+# extra="forbid" makes pydantic emit `additionalProperties: false` in the
+# generated schema. Groq's strict json_schema mode requires that on EVERY
+# object, including nested ones - without it method 3 returns a 400.
 
 class Person(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     age: int                      # note: int, not str. This is the trap we want.
     occupation: str
@@ -36,6 +41,9 @@ class Person(BaseModel):
 
 class People(BaseModel):
     """A wrapper, because most APIs want a top-level OBJECT, not a list."""
+
+    model_config = ConfigDict(extra="forbid")
+
     people: list[Person] = Field(description="Exactly three fictional people.")
 
 
@@ -83,8 +91,11 @@ def method_3_json_schema() -> str:
     for us - look at what model_json_schema() prints, it is the same kind
     of dict you hand-wrote in schemas.py this morning.
 
-    Not every model/provider supports this. If it 400s, that is the
-    provider telling you so - fall back to method 2 plus validation.
+    Not every model/provider supports this, and those that do have their
+    own requirements - Groq needs additionalProperties:false on every
+    object, which is why both models above set extra="forbid".
+    If it 400s, that is the provider telling you so - fall back to
+    method 2 plus validation.
     """
     schema = People.model_json_schema()
 
@@ -112,15 +123,20 @@ def validate(raw: str) -> People | None:
     Even a perfect schema mode can hand you age="twenty-nine".
     Pydantic turns that into an exception NOW instead of a bug three
     steps later in some other file.
+
+    Only ONE exception type to catch. model_validate_json parses the JSON
+    itself, so broken JSON does not raise json.JSONDecodeError - pydantic
+    wraps it into a ValidationError with type "json_invalid". Two different
+    problems, one exception; the error type is what tells them apart.
     """
     try:
         return People.model_validate_json(raw)
     except ValidationError as err:
-        print("  VALIDATION FAILED:")
-        print("  " + str(err).replace("\n", "\n  "))
-        return None
-    except json.JSONDecodeError:
-        print("  NOT EVEN JSON")
+        if any(e["type"] == "json_invalid" for e in err.errors()):
+            print("  NOT EVEN JSON - the model wrote prose or fenced the output")
+        else:
+            print("  VALIDATION FAILED:")
+            print("  " + str(err).replace("\n", "\n  "))
         return None
 
 

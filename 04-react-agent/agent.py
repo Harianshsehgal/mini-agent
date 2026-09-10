@@ -85,7 +85,7 @@ def ask(question: str) -> str:
             model=MODEL,
             messages=messages,
             tools=TOOLS,
-            reasoning_effort="medium",
+            reasoning_effort="low",
         )
 
         message = response.choices[0].message
