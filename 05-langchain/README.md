@@ -4,7 +4,7 @@ Steps 01–04 built everything by hand: the model call, the tool schemas, the
 tool-calling loop. This step does the same jobs with LangChain 1.x, to see
 what the framework does for me and what it hides from me.
 
-Status: sessions 4.1–4.3 done. 4.4 (`agent.py` with `create_agent`) is next.
+Status: sessions 4.1–4.3b done. 4.4 (`agent.py` with `create_agent`) is next.
 
 ---
 
@@ -31,7 +31,7 @@ The `.env` at the repo root must have `GROQ_API_KEY`. Model: `openai/gpt-oss-20b
 Always from the repo root:
 
 ```bash
-python 05-langchain/basics.py       # 4.1 + 4.3
+python 05-langchain/basics.py       # 4.1 + 4.3 + 4.3b
 python 05-langchain/tools.py        # 4.2 — prints each tool's schema
 python 05-langchain/round_trip.py   # 4.2 — one tool round trip with the model
 ```
@@ -42,11 +42,11 @@ as the script you run.
 
 ## Files
 
-| File            | Session  | What it does                                                                                   |
-| --------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `basics.py`     | 4.1, 4.3 | One model call and a close look at the reply. Then prompt templates and the `\|` pipe.         |
-| `tools.py`      | 4.2      | The same three tools as step 04, built with `@tool`. No `schemas.py` needed.                   |
-| `round_trip.py` | 4.2      | Ask → model requests a tool → I run it → send result back → final answer. Same job as step 03. |
+| File            | Session        | What it does                                                                                              |
+| --------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `basics.py`     | 4.1, 4.3, 4.3b | One model call and a close look at the reply. Then prompt templates and LCEL (the `\|` pipe and friends). |
+| `tools.py`      | 4.2            | The same three tools as step 04, built with `@tool`. No `schemas.py` needed.                              |
+| `round_trip.py` | 4.2            | Ask → model requests a tool → I run it → send result back → final answer. Same job as step 03.            |
 
 `tools.py` shares its name with `04-react-agent/tools.py` on purpose, so the two
 can be diffed. `round_trip.py` has no match in step 03; compare it by hand.
@@ -188,7 +188,7 @@ LangChain removed the formatting work. The loop logic is still mine
 
 ---
 
-## 4.3 — Prompt templates and the `|` pipe
+## 4.3 — Prompt templates and the `|` pipe (LCEL)
 
 **A prompt template is a message maker.** Dict in, messages out:
 
@@ -206,7 +206,8 @@ filled = prompt.invoke({"style": "one sentence", "question": "..."})
 - A missing key fails with
   `KeyError: "Input to ChatPromptTemplate is missing variables {'style'}. ..."`
 
-**The pipe joins steps into a line.** Each step's output is the next step's input:
+**The pipe joins steps into a line.** This is LCEL (LangChain Expression Language).
+Each step's output is the next step's input:
 
 ```
 dict → [prompt] → messages → [model] → AIMessage → [parser] → string
@@ -236,6 +237,64 @@ step inside a bigger chain.
 SystemMessage("...")                   # class (4.1)
 ("system", "...")                      # tuple (4.3, inside templates)
 ```
+
+---
+
+## 4.3b — More LCEL pieces
+
+A chain is a line of workers. Each worker does one job and passes the result on.
+4.3b adds three new kinds of workers.
+
+**`RunnableLambda` — my own function as a worker.**
+
+1. I wrote a normal function, `add_word_count`. It knows nothing about LangChain.
+2. I put it in the chain with `|`.
+3. LangChain wrapped it in a `RunnableLambda`, so it fits in the line.
+4. The chain now returns what my function returns: a dict.
+
+Result: `{'answer': 'The largest planet in our solar system is Jupiter.', 'words': 9}`
+
+**`RunnableParallel` — several workers at the same time.**
+
+1. Two chains get the same question.
+2. They run at the same time, not one after the other.
+3. The answers come back in a dict, with the names I chose.
+
+Result: `{'one_word': 'Jupiter', 'one_sentence': 'Jupiter is the largest planet in our solar system.'}`
+
+Time: 0.55 s in parallel vs 1.08 s one after the other. About 2× faster.
+
+**`RunnablePassthrough` — a mini RAG chain.**
+
+The prompt has two blanks (`{context}` and `{question}`), but the user gives
+only one thing: the question. The flow:
+
+1. `rag_chain.invoke(question)` gets one string, the question.
+2. The dict at the start makes a new dictionary from it:
+    - `context`: made by calling `fake_retriever(question)`
+    - `question`: the same question, unchanged (this is `RunnablePassthrough`)
+3. `rag_prompt` uses this dictionary to fill its two blanks.
+4. `model` reads the messages and answers.
+5. `StrOutputParser` keeps only the text.
+
+```python
+rag_chain = (
+    {"context": fake_retriever, "question": RunnablePassthrough()}
+    | rag_prompt
+    | model
+    | StrOutputParser()
+)
+```
+
+Result: `Vaultspire Tower is 300 metres tall.` Vaultspire Tower is fictional,
+so the model could only know this from the context.
+
+Good to know:
+
+- A dict at the start of a chain becomes a `RunnableParallel` automatically.
+- `RunnablePassthrough()` does the same as `lambda q: q`.
+- On Friday, `fake_retriever` becomes a real retriever that searches documents.
+  The rest of the chain stays the same.
 
 ---
 
